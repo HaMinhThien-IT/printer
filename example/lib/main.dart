@@ -3,7 +3,10 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_pos_printer_platform/flutter_pos_printer_platform.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:image/image.dart' as prefix;
 
 void main() {
   runApp(const MyApp());
@@ -17,28 +20,20 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  // Printer Type [bluetooth, usb, network]
   var defaultPrinterType = PrinterType.bluetooth;
-  var _isBle = false;
-  var _reconnect = false;
+  final _isBle = false;
+  final _reconnect = false;
   var _isConnected = false;
   var printerManager = PrinterManager.instance;
   var devices = <BluetoothPrinter>[];
   StreamSubscription<PrinterDevice>? _subscription;
   StreamSubscription<BTStatus>? _subscriptionBtStatus;
-  StreamSubscription<USBStatus>? _subscriptionUsbStatus;
-  BTStatus _currentStatus = BTStatus.none;
-  // _currentUsbStatus is only supports on Android
-  USBStatus _currentUsbStatus = USBStatus.none;
   List<int>? pendingTask;
-  String _ipAddress = '';
-  String _port = '9100';
+  final String _port = '9100';
   final _ipController = TextEditingController();
   final _portController = TextEditingController();
   BluetoothPrinter? selectedPrinter;
-  // Function onPrinterFound = (name, ipAddress) {
-  //   print("PrinterFound :" + name + ipAddress);
-  // };
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +43,6 @@ class _MyAppState extends State<MyApp> {
     _subscriptionBtStatus =
         PrinterManager.instance.stateBluetooth.listen((status) {
       log(' ----------------- status bt $status ------------------ ');
-      _currentStatus = status;
       if (status == BTStatus.connected) {
         setState(() {
           _isConnected = true;
@@ -112,11 +106,10 @@ class _MyAppState extends State<MyApp> {
             .disconnect(type: selectedPrinter!.typePrinter);
       }
     }
-    // print({device});
+
     selectedPrinter = device;
     setState(() {});
   }
-  // ZebraPrinter zebraPrinter =  await ZebraPrinter.getPrinterInstance();
 
   Future _printReceiveTest() async {
     if (selectedPrinter == null || _isConnected) {
@@ -127,23 +120,15 @@ class _MyAppState extends State<MyApp> {
     final generator = Generator(PaperSize.mm80, profile);
     List<int> bytes = [];
 
-    bytes += generator.text('Test Print',
-        styles: const PosStyles(align: PosAlign.center));
-    bytes += generator.text('Product 1');
-    bytes += generator.text('Product 2');
-    bytes += generator.text('Product 3');
-    bytes += generator.text('Product 4 ');
+    final ByteData data = await rootBundle.load('assets/logo.png');
+    final Uint8List buf = data.buffer.asUint8List();
+    final prefix.Image image = prefix.decodeImage(buf)!;
+    bytes += generator.image(image, align: PosAlign.center);
 
     await _printEscPos(bytes, generator);
     await PrinterManager.instance
         .disconnect(type: selectedPrinter!.typePrinter);
     _isConnected = false;
-
-    // if (selectedPrinter != null) {
-
-    // }
-
-    // setState(() {});
   }
 
   /// print ticket
@@ -151,14 +136,15 @@ class _MyAppState extends State<MyApp> {
     if (selectedPrinter == null) return;
     var bluetoothPrinter = selectedPrinter!;
 
-    bytes += generator.cut();
     await printerManager.connect(
-        type: bluetoothPrinter.typePrinter,
-        model: BluetoothPrinterInput(
-            name: bluetoothPrinter.deviceName,
-            address: bluetoothPrinter.address!,
-            isBle: bluetoothPrinter.isBle ?? false,
-            autoConnect: _reconnect));
+      type: bluetoothPrinter.typePrinter,
+      model: BluetoothPrinterInput(
+        name: bluetoothPrinter.deviceName,
+        address: bluetoothPrinter.address!,
+        isBle: bluetoothPrinter.isBle ?? false,
+        autoConnect: _reconnect,
+      ),
+    );
     pendingTask = bytes;
     printerManager.send(type: bluetoothPrinter.typePrinter, bytes: bytes);
     pendingTask = null;
@@ -180,6 +166,12 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+      ),
+    );
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
